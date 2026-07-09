@@ -227,6 +227,6 @@ Special thanks to IBM SkillsBuild, IBM watsonx.ai, and Edunet Foundation for pro
 
 This project is licensed under the [MIT License](LICENSE).
 
-Copyright (c) 2026 Ishika Agrawal
+Copyright (c) 2026 Ishika Awasthi
 
 Developed for educational purposes as part of the **IBM SkillsBuild AICTE Internship Program**.
