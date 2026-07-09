@@ -175,29 +175,35 @@ Additionally, the AI provides:
 ### 🏠 Home Page
 Select an interview domain and start a 5-question AI-powered interview session.
 
-![Home Page](screenshots/home%20page.png)
+![Home Page](screenshots/home.png)
 
 ---
 
 ### 💬 Interview Question
 Answer AI-generated interview questions in real time.
 
-![Interview Question](screenshots/page%202.png)
+![Interview Question](screenshots/interview_question.png)
 
 ---
 
 ### 📊 AI Evaluation & Feedback
-Receive instant AI-generated scores, strengths, weaknesses, and an ideal answer for improvement.
+Receive instant AI-generated scores, strengths, weaknesses, and an ideal answer.
 
-![AI Feedback](screenshots/page%203.png)
+![AI Feedback](screenshots/ai-feedback.png)
 
 ---
 
 ### 📈 Final Dashboard
-View your overall interview grade, average scores across evaluation dimensions, and session summary.
+View your overall interview grade, average scores across evaluation dimensions, and interview summary.
 
-![Final Dashboard](screenshots/page%204.png)
+![Final Dashboard](screenshots/final-dashboard.png)
 
+---
+
+### 📝 AI Session Report
+Review a comprehensive AI-generated report with strengths, weaknesses, recommended topics, and a personalized learning roadmap.
+
+![Session Report](screenshots/session_report.png)
 ---
 
 ### 📝 AI Session Report
