@@ -9,6 +9,7 @@ Exports:
   build_summary_prompt(topic, results)
 """
 
+import re
 from pathlib import Path
 
 # ── Prompt file paths ─────────────────────────────────────────────────────────
@@ -19,12 +20,19 @@ QUESTION_PROMPT: Path = PROMPTS_DIR / "question_prompt.txt"
 EVALUATION_PROMPT: Path = PROMPTS_DIR / "evaluation_prompt.txt"
 SUMMARY_PROMPT: Path = PROMPTS_DIR / "summary_prompt.txt"
 
-# ── CLI topic menu ────────────────────────────────────────────────────────────
-
+# ── Topic menu ─────────────────────────────────────────────────────────────
+#
+# Single source of truth for both interfaces: main.py (CLI) builds its
+# numbered menu from this dict, and app.py (Streamlit) builds its radio
+# labels from it too (see app.py's TOPIC_OPTIONS, which maps display text
+# with emoji to these same role strings). Keeping both driven off this one
+# dict prevents the two interfaces from silently drifting out of sync.
 TOPIC_LABELS: dict[str, str] = {
     "1": "Python",
     "2": "Machine Learning",
     "3": "HR",
+    "4": "Cloud and DevOps",
+    "5": "Data Structures and Algorithms",
 }
 
 
@@ -96,12 +104,16 @@ def build_evaluation_prompt(topic: str, question: str, answer: str) -> str:
     with open(EVALUATION_PROMPT, "r", encoding="utf-8") as f:
         template = f.read()
 
-    return (
-        template
-        .replace("{role}", topic)
-        .replace("{question}", question)
-        .replace("{answer}", answer)
-    )
+    # Substitute all three placeholders in a single simultaneous pass over the
+    # ORIGINAL template, rather than chaining .replace() calls on a growing
+    # string. Chaining is unsafe here: {question} and {answer} come from the
+    # model / the candidate and are not sanitised, so if either one happens
+    # to contain the literal text "{answer}" (or "{role}"), a later .replace()
+    # call would incorrectly rewrite that inserted content too. A single
+    # combined pass only ever matches placeholders in the template itself.
+    replacements = {"{role}": topic, "{question}": question, "{answer}": answer}
+    pattern = re.compile("|".join(re.escape(k) for k in replacements))
+    return pattern.sub(lambda m: replacements[m.group(0)], template)
 
 
 def build_summary_prompt(topic: str, results: list[dict[str, str]]) -> str:

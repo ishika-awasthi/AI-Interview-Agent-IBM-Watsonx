@@ -19,7 +19,7 @@ from ibm_watsonx_ai.foundation_models import ModelInference
 
 from models.watsonx_client import build_client, generate
 from report.history_manager import save_interview
-from utils.text_utils import clean_response
+from utils.text_utils import clean_response, parse_feedback
 from prompts.interview_prompt import (
     TOPIC_LABELS,
     build_question_prompt,
@@ -67,49 +67,25 @@ def choose_topic() -> str:
         print(f"    [{key}]  {label}")
     print()
 
+    valid_keys = list(TOPIC_LABELS.keys())
+    prompt_range = f"{valid_keys[0]}-{valid_keys[-1]}" if len(valid_keys) > 1 else valid_keys[0]
+
     while True:
-        choice = input("  Enter 1, 2, or 3: ").strip()
+        choice = input(f"  Enter {prompt_range}: ").strip()
         if choice in TOPIC_LABELS:
             return TOPIC_LABELS[choice]
-        print("  Invalid choice — please enter 1, 2, or 3.")
+        print(f"  Invalid choice — please enter {prompt_range}.")
 
 
 def print_feedback(feedback: str) -> None:
     """
     Pretty-print the structured feedback block returned by Granite.
     Each labelled line gets its own visual row.
+
+    Uses the shared parse_feedback() from utils.text_utils so the CLI parses
+    Granite's structured output identically to the Streamlit app.
     """
-    LABELS = [
-        "Overall Score",
-        "Technical Accuracy",
-        "Clarity",
-        "Completeness",
-        "Strengths",
-        "Weaknesses",
-        "Ideal Answer",
-    ]
-
-    # Build a lookup from label → value by scanning lines
-    parsed: dict[str, str] = {}
-    current_label: str | None = None
-    buffer: list[str] = []
-
-    for raw_line in feedback.splitlines():
-        line = raw_line.strip()
-        matched = False
-        for lbl in LABELS:
-            if line.lower().startswith(lbl.lower() + ":"):
-                if current_label:
-                    parsed[current_label] = " ".join(buffer).strip()
-                current_label = lbl
-                buffer = [line[len(lbl) + 1:].strip()]
-                matched = True
-                break
-        if not matched and current_label and line:
-            buffer.append(line)
-
-    if current_label:
-        parsed[current_label] = " ".join(buffer).strip()
+    parsed = parse_feedback(feedback)
 
     # Display
     print()

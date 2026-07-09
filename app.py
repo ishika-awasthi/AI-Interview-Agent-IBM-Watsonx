@@ -19,10 +19,17 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from models.watsonx_client import build_client, generate
-from utils.text_utils import clean_response
+from utils.text_utils import (
+    clean_response,
+    parse_feedback,
+    score_fraction,
+    score_display,
+    FEEDBACK_LABELS,
+)
 from prompts.interview_prompt import (
     build_question_prompt,
     build_evaluation_prompt,
+    build_summary_prompt,
 )
 
 load_dotenv()
@@ -526,76 +533,11 @@ def safe_html(text: str) -> str:
     return html.escape(text or "").replace("\n", "<br>")
 
 
-FEEDBACK_LABELS: list[str] = [
-    "Overall Score", "Technical Accuracy", "Clarity", "Completeness",
-    "Strengths", "Weaknesses", "Ideal Answer",
-]
 
-
-def parse_feedback(feedback: str) -> dict[str, str]:
-    """Parse a structured feedback string into a label-to-value mapping.
-
-    Scans each line for a known label prefix (e.g. ``"Overall Score:"``),
-    collects the value that follows, and handles multi-line values by
-    buffering continuation lines.
-
-    Args:
-        feedback: Raw text returned by the model after evaluation.
-
-    Returns:
-        A dict mapping each recognised label to its value string.
-    """
-    parsed: dict[str, str] = {}
-    current_label: str | None = None
-    buffer: list[str] = []
-    for raw_line in feedback.splitlines():
-        line = raw_line.strip()
-        matched = False
-        for lbl in FEEDBACK_LABELS:
-            if line.lower().startswith(lbl.lower() + ":"):
-                if current_label:
-                    parsed[current_label] = " ".join(buffer).strip()
-                current_label = lbl
-                buffer = [line[len(lbl) + 1:].strip()]
-                matched = True
-                break
-        if not matched and current_label and line:
-            buffer.append(line)
-    if current_label:
-        parsed[current_label] = " ".join(buffer).strip()
-    return parsed
-
-
-def score_fraction(value: str) -> float:
-    """Convert a score string such as ``'8/10'`` to a fraction in [0, 1].
-
-    Accepts formats like ``'8/10'``, ``'8'``, or ``'8.5 / 10'``.
-    Returns ``0.0`` when the string cannot be parsed.
-    Assumes a denominator of 10 when none is present.
-    """
-    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:/\s*(\d+(?:\.\d+)?))?", value or "")
-    if not match:
-        return 0.0
-    num = float(match.group(1))
-    denom = float(match.group(2)) if match.group(2) else 10.0
-    return max(0.0, min(1.0, num / denom)) if denom else 0.0
-
-
-def score_display(value: str) -> str:
-    """Extract a short 'N/10'-style label from a score string for compact display.
-
-    Model output for a score field sometimes includes trailing rationale text
-    on the same line (e.g. ``'6/10 The candidate correctly identifies...'``).
-    This pulls out just the leading numeric score/denominator so UI elements
-    like the score ring never have to render a full sentence. Falls back to
-    '—' when no numeric score can be found.
-    """
-    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:/\s*(\d+(?:\.\d+)?))?", value or "")
-    if not match:
-        return "—"
-    num = match.group(1)
-    denom = match.group(2) or "10"
-    return f"{num}/{denom}"
+# parse_feedback / score_fraction / score_display / FEEDBACK_LABELS now live in
+# utils/text_utils.py (imported above), so main.py (CLI) and app.py
+# (Streamlit) share a single implementation instead of two copies that could
+# silently drift apart.
 
 
 def score_gradient(fraction: float) -> str:
@@ -701,6 +643,57 @@ def compute_grade(avg_overall: float) -> tuple[str, str]:
     return "D", "Needs more preparation — don't give up! 🎯"
 
 
+def _history_to_summary_results(history: list[dict]) -> list[dict[str, str]]:
+    """Reshape session history into the ``{question, answer, feedback}`` shape
+    expected by build_summary_prompt().
+
+    Streamlit's history stores each item's evaluation as a parsed
+    ``feedback_data`` dict (label -> value) rather than the raw feedback text
+    that main.py's CLI flow keeps around, so this flattens it back into a
+    readable text block per question.
+    """
+    results: list[dict[str, str]] = []
+    for item in history:
+        fd = item.get("feedback_data") or {}
+        if fd:
+            feedback_text = "\n".join(
+                f"{lbl}: {fd[lbl]}" for lbl in FEEDBACK_LABELS if lbl in fd
+            )
+        else:
+            feedback_text = "(skipped — no evaluation)"
+        results.append({
+            "question": item["question"],
+            "answer": item["answer"],
+            "feedback": feedback_text,
+        })
+    return results
+
+
+def generate_ai_summary(model, role: str, history: list[dict]) -> str | None:
+    """Call the model once to produce the AI session report (build_summary_prompt).
+
+    Mirrors what main.py's CLI flow already does at the end of a session —
+    previously the Streamlit app computed only a local numeric grade and
+    never called the AI summary at all. Returns None (after showing an
+    st.error) if generation fails for any reason.
+    """
+    if not history:
+        return None
+    try:
+        results = _history_to_summary_results(history)
+        summary_prompt = build_summary_prompt(role, results)
+        raw = generate(model, summary_prompt)
+        return clean_response(raw)
+    except FileNotFoundError:
+        st.error("⚠️ A prompt template file is missing. Please contact support.")
+    except RuntimeError as exc:
+        st.error(f"⚠️ {exc}")
+    except Exception:
+        logger.exception("Unexpected error generating the AI session summary.")
+        st.error("⚠️ Something went wrong generating your AI summary report.")
+    return None
+
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 TOTAL_QUESTIONS: int = 5
@@ -733,6 +726,7 @@ def _init_state() -> None:
         "history": [],            # list of {question, answer, feedback_data}
         "feedback_data": {},
         "role": "Python",
+        "ai_summary": None,        # AI-generated session report (set on entering "summary")
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -987,10 +981,21 @@ elif st.session_state.stage == "question":
                 "answer": "(skipped)",
                 "feedback_data": {},
             })
-            # Advance to next question or summary
+            # Advance to next question or summary. `advanced` tracks whether
+            # the stage transition actually succeeded — previously this block
+            # called st.rerun() unconditionally, which meant any st.error()
+            # raised inside the try/except below was immediately wiped by the
+            # rerun before the user ever saw it. Now we only rerun on success,
+            # so a failure leaves the error message on screen.
             next_q = q_num + 1
+            advanced = False
             if next_q > TOTAL_QUESTIONS:
+                with st.spinner("📊 Preparing your final summary …"):
+                    st.session_state.ai_summary = generate_ai_summary(
+                        st.session_state.model, role, st.session_state.history
+                    )
                 st.session_state.stage = "summary"
+                advanced = True
             else:
                 with st.spinner(f"✨ Loading Question {next_q} …"):
                     try:
@@ -1001,6 +1006,7 @@ elif st.session_state.stage == "question":
                         st.session_state.current_q = next_q
                         st.session_state.asked_questions.append(question)
                         st.session_state.stage = "question"
+                        advanced = True
                     except FileNotFoundError:
                         st.error("⚠️ A prompt template file is missing. Please contact support.")
                     except RuntimeError as exc:
@@ -1008,7 +1014,8 @@ elif st.session_state.stage == "question":
                     except Exception:
                         logger.exception("Unexpected error loading question %s (skip path).", next_q)
                         st.error("⚠️ Something went wrong. Please try again.")
-            st.rerun()
+            if advanced:
+                st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1082,6 +1089,10 @@ elif st.session_state.stage == "feedback":
     next_q = q_num + 1
     if next_q > TOTAL_QUESTIONS:
         if st.button("🏁  View Final Summary", type="primary", use_container_width=True):
+            with st.spinner("📊 Preparing your final summary …"):
+                st.session_state.ai_summary = generate_ai_summary(
+                    st.session_state.model, role, st.session_state.history
+                )
             st.session_state.stage = "summary"
             st.rerun()
     else:
@@ -1171,6 +1182,28 @@ elif st.session_state.stage == "summary":
 
     st.write("")
 
+    # ── AI-generated session report ─────────────────────────────────
+    # Previously this stage only computed a local numeric grade and never
+    # called the model's session-summary prompt at all (build_summary_prompt /
+    # summary_prompt.txt existed but were unused here, even though the CLI
+    # flow in main.py already used them). ai_summary is generated once, at
+    # the point of transitioning into this stage — see the "View Final
+    # Summary" and last-question "Skip" buttons above — and cached in
+    # session_state so re-rendering this page (e.g. expanding an accordion)
+    # doesn't re-call the model.
+    ai_summary = st.session_state.get("ai_summary")
+    if ai_summary:
+        st.markdown("#### 🧭 AI Session Report")
+        st.markdown(
+            f"""
+            <div class="info-panel">
+                {safe_html(ai_summary)}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.write("")
+
     # ── Per-question breakdown ────────────────────────────────────
     st.markdown("#### 🗂️ Question-by-Question Breakdown")
     for i, item in enumerate(history, start=1):
@@ -1253,7 +1286,7 @@ elif st.session_state.stage == "summary":
     with restart_col:
         if st.button("🔄  Start New Session", type="primary", use_container_width=True):
             for key in ["stage", "current_q", "question", "asked_questions",
-                        "history", "feedback_data", "role"]:
+                        "history", "feedback_data", "role", "ai_summary"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()

@@ -1,6 +1,11 @@
 from datetime import datetime
 from pathlib import Path
 
+# Anchor to the project root (parent of this report/ package) rather than
+# the current working directory, so history files land in a predictable
+# place regardless of where `python main.py` is invoked from.
+PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
+
 
 def save_interview(
     role: str,
@@ -21,7 +26,7 @@ def save_interview(
     Raises:
         OSError: When the history directory or file cannot be created/written.
     """
-    history_dir = Path("interview_history")
+    history_dir = PROJECT_ROOT / "interview_history"
     history_dir.mkdir(exist_ok=True)
 
     filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S.txt")
