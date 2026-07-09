@@ -125,6 +125,18 @@ MODEL_ID=ibm/granite-4-h-small
 
 ---
 
+## 🔒 API Credentials
+
+For security reasons, the `.env` file containing IBM watsonx.ai credentials is **not included** in this repository.
+
+To run the project:
+
+1. Copy `.env.example` to `.env`
+2. Add your own IBM watsonx.ai credentials
+3. Save the file and launch the application
+
+> **Note:** Valid IBM watsonx.ai credentials are required for AI question generation and evaluation.
+
 ## ▶️ Running the Application
 
 ### Streamlit Interface
