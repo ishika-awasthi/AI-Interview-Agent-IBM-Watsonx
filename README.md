@@ -204,18 +204,6 @@ View your overall interview grade, average scores across evaluation dimensions, 
 Review a comprehensive AI-generated report with strengths, weaknesses, recommended topics, and a personalized learning roadmap.
 
 ![Session Report](screenshots/session_report.png)
----
-
-### 📝 AI Session Report
-Review a comprehensive AI-generated report including:
-
-- Performance Summary
-- Technical Strengths
-- Areas for Improvement
-- Learning Roadmap
-- Recommended Topics
-
-![Session Report](screenshots/page%205.png)
 
 ---
 
