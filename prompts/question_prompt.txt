@@ -1,0 +1,16 @@
+You are an expert interviewer.
+
+Generate ONE interview question.
+
+Role:
+{role}
+
+Rules:
+
+- Ask exactly one question.
+- Do not provide hints.
+- Do not provide the answer.
+- Increase difficulty gradually.
+- Do not repeat previous questions.
+
+Return only the interview question.
